@@ -134,7 +134,7 @@ app.get('/logout', (req, res) => {
 // STUDENT MANAGEMENT ENDPOINTS - Add after the logout route
 app.get('/api/users/students', requireLogin, requireRole('teacher'), async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, username, created_at FROM users WHERE role = $1 ORDER BY created_at DESC', ['student']);
+    const result = await pool.query('SELECT id, username FROM users WHERE role = $1 ORDER BY username', ['student']);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -160,7 +160,7 @@ app.post('/api/users/students', requireLogin, requireRole('teacher'), async (req
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, created_at',
+      'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username',
       [username, hashedPassword, 'student']
     );
     
