@@ -230,11 +230,20 @@ app.post('/api/submit-answer', requireLogin, requireRole('student'), async (req,
 });
 
 app.get('/teacher', requireLogin, requireRole('teacher'), (req, res) => {
-  res.sendFile(__dirname + '/teacher.html');
+  const filePath = __dirname + '/teacher.html';
+  console.log('Trying to serve teacher.html from:', filePath);
+  const fs = require('fs');
+  console.log('File exists?', fs.existsSync(filePath));
+  res.sendFile(filePath);
 });
 
+
 app.get('/student', requireLogin, requireRole('student'), (req, res) => {
-  res.sendFile(__dirname + '/student.html');
+  const filePath = __dirname + '/student.html';
+  console.log('Trying to serve student.html from:', filePath);
+  const fs = require('fs');
+  console.log('File exists?', fs.existsSync(filePath));
+  res.sendFile(filePath);
 });
 
 app.listen(PORT, () => {
