@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Student Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { LogOut, CheckCircle, XCircle } = lucide;
+
+    function StudentDashboard() {
+      const [assignments, setAssignments] = useState([]);
+      const [problems, setProblems] = useState([]);
+      const [submissions, setSubmissions] = useState([]);
+      const [selectedAssignment, setSelectedAssignment] = useState(null);
+      const [inputValues, setInputValues] = useState({});
+
+      useEffect(() => {
+        loadData();
+      }, []);
+
+      async function loadData() {
+        const [assignRes, probRes, subRes] = await Promise.all([
+          fetch('/api/assignments'),
+          fetch('/api/problems'),
+          fetch('/api/submissions')
+        ]);
+        setAssignments(await assignRes.json());
+        setProblems(await probRes.json());
+        setSubmissions(await subRes.json());
+      }
+
+      function generateValues(variables) {
+        const values = {};
+        for (const [varName, range] of Object.entries(variables)) {
+          values[varName] = Math.random() * (range.max - range.min) + range.min;
+        }
+        return values;
+      }
+
+      function calculateAnswer(formula, values) {
+        try {
+          const func = new Function(...Object.keys(values), `return ${formula}`);
+          return func(...Object.values(values));
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function renderProblemText(description, values) {
+        let text = description;
+        for (const [varName, value] of Object.entries(values)) {
+          text = text.replace(`{${varName}}`, value.toFixed(2));
+        }
+        return text;
+      }
+
+      async function submitAnswer(assignmentId, problemId, answer) {
+        if (!answer) return;
+
+        const res = await fetch('/api/submit-answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assignmentId, problemId, answer })
+        });
+
+        const result = await res.json();
+        if (result.error) {
+          alert(result.error);
+        } else {
+          await loadData();
+          setInputValues({ ...inputValues, [`${assignmentId}_${problemId}`]: '' });
+        }
+      }
+
+      if (selectedAssignment) {
+        const assignment = selectedAssignment;
+        const assignmentSubs = submissions.filter(s => s.assignment_id === assignment.id);
+        const total = assignment.problem_ids.length;
+        const correct = assignmentSubs.filter(s => s.is_correct).length;
+        const grade = total > 0 ? (correct / total * 100) : 0;
+
+        return (
+          <div className="min-h-screen bg-gray-50 p-6">
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-white rounded-lg shadow p-6 mb-6">
+                <div className="flex justify-between mb-4">
+                  <div>
+                    <h1 className="text-2xl font-bold">{assignment.title}</h1>
+                    <p className="text-gray-600 text-sm">{assignment.description}</p>
+                  </div>
+                  <button onClick={() => setSelectedAssignment(null)} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                    Back
+                  </button>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 flex justify-between">
+                  <span>Progress: {correct}/{total}</span>
+                  <span>Grade: <span className={`px-3 py-1 rounded-full text-sm font-bold ${grade === 100 ? 'bg-green-100 text-green-800' : grade >= 70 ? 'bg-yellow-100 text-yellow-800' : correct > 0 ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600'}`}>
+                    {correct > 0 || grade === 100 ? `${Math.round(grade)}%` : 'Not started'}
+                  </span></span>
+                </div>
+              </div>
+
+              {assignment.problem_ids.map((pid, i) => {
+                const prob = problems.find(p => p.id === pid);
+                if (!prob) return null;
+
+                let sub = assignmentSubs.find(s => s.problem_id === pid);
+                
+                let vals = sub ? sub.problem_instances : generateValues(prob.variables);
+                const txt = renderProblemText(prob.description, vals);
+                const inputKey = `${assignment.id}_${pid}`;
+                const inp = inputValues[inputKey] || '';
+
+                return (
+                  <div key={pid} className="bg-white rounded-lg shadow p-6 mb-4">
+                    <div className="flex gap-4">
+                      <div className="w-10 h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center font-bold">
+                        {i + 1}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold mb-2">{prob.title}</h3>
+                        <p className="mb-4">{txt}</p>
+                        
+                        <div className="flex gap-2 mb-4">
+                          <input 
+                            type="number" 
+                            step="any" 
+                            value={inp} 
+                            onChange={(e) => setInputValues({ ...inputValues, [inputKey]: e.target.value })}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                submitAnswer(assignment.id, pid, inp);
+                              }
+                            }}
+                            className="flex-1 px-4 py-2 border rounded-lg" 
+                            placeholder={`Answer in ${prob.unit}`}
+                            disabled={sub?.is_correct || (sub?.attempts || 0) >= prob.max_attempts}
+                          />
+                          <button 
+                            onClick={() => submitAnswer(assignment.id, pid, inp)}
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400"
+                            disabled={sub?.is_correct || (sub?.attempts || 0) >= prob.max_attempts}
+                          >
+                            Submit
+                          </button>
+                        </div>
+
+                        {sub && sub.user_answer && (
+                          <div className={`p-4 rounded-lg ${sub.is_correct ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                            <div className="flex items-center gap-2 mb-2">
+                              {sub.is_correct ? (
+                                <>
+                                  <CheckCircle className="text-green-600" size={20} />
+                                  <span className="font-bold text-green-800">Correct!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="text-red-600" size={20} />
+                                  <span className="font-bold text-red-800">Incorrect</span>
+                                </>
+                              )}
+                            </div>
+                            <p className="text-sm">Your answer: {parseFloat(sub.user_answer).toFixed(2)} {prob.unit}</p>
+                            {!sub.is_correct && (
+                              <>
+                                <p className="text-sm text-red-700 mt-1">
+                                  Try again! ({sub.attempts}/{prob.max_attempts} attempts used)
+                                </p>
+                                {sub.attempts >= prob.max_attempts && (
+                                  <p className="text-sm text-red-800 font-bold mt-2">
+                                    Maximum attempts reached. Correct answer: {parseFloat(sub.correct_answer).toFixed(2)} {prob.unit}
+                                  </p>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen bg-gray-50 p-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-white rounded-lg shadow p-6 mb-6">
+              <div className="flex justify-between">
+                <h1 className="text-3xl font-bold">My Assignments</h1>
+                <a href="/logout" className="flex items-center gap-2 px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                  <LogOut size={18} /> Logout
+                </a>
+              </div>
+            </div>
+
+            {assignments.map(a => {
+              const assignmentSubs = submissions.filter(s => s.assignment_id === a.id);
+              const tot = a.problem_ids.length;
+              const cor = assignmentSubs.filter(s => s.is_correct).length;
+              const grd = tot > 0 ? (cor / tot * 100) : 0;
+
+              return (
+                <div key={a.id} className="bg-white rounded-lg shadow p-6 mb-4">
+                  <h2 className="text-2xl font-bold mb-2">
+                    {a.title}
+                    {cor > 0 && (
+                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-bold ${grd === 100 ? 'bg-green-100 text-green-800' : grd >= 70 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                        {Math.round(grd)}%
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-gray-600 mb-3">{a.description}</p>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Due: {new Date(a.due_date).toLocaleDateString()} | {tot} problems
+                    {cor > 0 && ` | Score: ${cor}/${tot}`}
+                  </p>
+                  <button 
+                    onClick={() => setSelectedAssignment(a)}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  >
+                    {cor > 0 ? 'View/Retake' : 'Start'} Assignment
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<StudentDashboard />, document.getElementById('root'));
+  </script>
+</body>
+</html>
