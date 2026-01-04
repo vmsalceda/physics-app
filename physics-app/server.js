@@ -131,6 +131,87 @@ app.get('/logout', (req, res) => {
   res.redirect('/login');
 });
 
+// STUDENT MANAGEMENT ENDPOINTS - Add after the logout route
+app.get('/api/users/students', requireLogin, requireRole('teacher'), async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, username, created_at FROM users WHERE role = $1 ORDER BY created_at DESC', ['student']);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users/students', requireLogin, requireRole('teacher'), async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+
+    const existing = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, created_at',
+      [username, hashedPassword, 'student']
+    );
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/students/:username', requireLogin, requireRole('teacher'), async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    await pool.query('DELETE FROM submissions WHERE student_username = $1', [username]);
+    const result = await pool.query('DELETE FROM users WHERE username = $1 AND role = $2 RETURNING username', [username, 'student']);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    res.json({ success: true, username: result.rows[0].username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/students/:username/password', requireLogin, requireRole('teacher'), async (req, res) => {
+  try {
+    const { username } = req.params;
+    const { password } = req.body;
+    
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'UPDATE users SET password = $1 WHERE username = $2 AND role = $3 RETURNING username',
+      [hashedPassword, username, 'student']
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    
+    res.json({ success: true, username: result.rows[0].username });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/problems', requireLogin, async (req, res) => {
   const problems = await pool.query('SELECT * FROM problems ORDER BY id');
   res.json(problems.rows);
