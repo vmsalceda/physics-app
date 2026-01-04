@@ -23,8 +23,10 @@ app.use(bodyParser.json());
 app.use(session({
   store: new pgSession({
     pool: pool,
-    tableName: 'user_sessions'
+    tableName: 'user_sessions',
+    createTableIfMissing: true
   }),
+
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
   resave: false,
   saveUninitialized: false,
